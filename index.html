@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AgroSat DZ — Veille incendies</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+
+<style>
+  :root {
+    --bg:        #0e1418;   /* fond console, bleu-nuit profond */
+    --panel:     #151d23;   /* panneaux */
+    --panel-2:   #1c272e;   /* survol / lignes */
+    --ligne:     #2a3841;   /* filets */
+    --texte:     #e6edf1;   /* texte principal */
+    --texte-2:   #8ea3b0;   /* texte secondaire */
+    --firms:     #ff3b30;   /* rouge — FIRMS (polaire, 375 m) */
+    --mtg:       #ff9500;   /* orange — MTG (geostationnaire) */
+    --ok:        #34c759;   /* etat OK */
+    --focus:     #4aa3ff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--texte);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---------------- Panneau lateral ---------------- */
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--ligne);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .entete {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--ligne);
+  }
+  .marque {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    font-size: 15px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .pastille {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 0 rgba(52,199,89,.6);
+    animation: pouls 2.4s infinite;
+  }
+  @keyframes pouls {
+    0%   { box-shadow: 0 0 0 0 rgba(52,199,89,.55); }
+    70%  { box-shadow: 0 0 0 8px rgba(52,199,89,0); }
+    100% { box-shadow: 0 0 0 0 rgba(52,199,89,0); }
+  }
+  .sous-titre {
+    color: var(--texte-2);
+    margin-top: 7px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .contenu { padding: 18px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+
+  .bloc-titre {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--texte-2);
+    margin: 4px 0 12px;
+  }
+
+  /* ---------------- Compteurs ---------------- */
+  .compteurs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+  .carte-num {
+    background: var(--panel-2);
+    border: 1px solid var(--ligne);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .carte-num .valeur {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .carte-num .etiq {
+    font-size: 11px; color: var(--texte-2); margin-top: 7px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .carte-num.firms .valeur { color: var(--firms); }
+  .carte-num.mtg   .valeur { color: var(--mtg); }
+  .carte-num.total { grid-column: 1 / -1; }
+  .carte-num.total .valeur { color: var(--texte); }
+
+  /* ---------------- Filtres (sources) ---------------- */
+  .filtres { margin-top: 22px; }
+  .source {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 13px;
+    border: 1px solid var(--ligne);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s, border-color .15s;
+  }
+  .source:hover { background: var(--panel-2); }
+  .source.eteinte { opacity: .42; }
+  .source .puce { width: 13px; height: 13px; border-radius: 50%; flex: none; }
+  .source .puce.firms { background: var(--firms); }
+  .source .puce.mtg   { background: var(--mtg); }
+  .source .nom { font-weight: 600; }
+  .source .desc { font-size: 11.5px; color: var(--texte-2); margin-top: 2px; }
+  .source .interr {
+    margin-left: auto; font-family: ui-monospace, monospace;
+    font-size: 11px; color: var(--texte-2);
+  }
+  .source .case {
+    width: 18px; height: 18px; border-radius: 5px;
+    border: 1.5px solid var(--ligne); flex: none;
+    display: grid; place-items: center;
+  }
+  .source:not(.eteinte) .case { border-color: currentColor; }
+  .source.firms:not(.eteinte) .case { color: var(--firms); }
+  .source.mtg:not(.eteinte)   .case { color: var(--mtg); }
+  .source .case svg { width: 12px; height: 12px; opacity: 0; }
+  .source:not(.eteinte) .case svg { opacity: 1; }
+
+  /* ---------------- Legende ---------------- */
+  .legende { margin-top: 22px; }
+  .legende .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0; color: var(--texte-2); font-size: 12.5px;
+  }
+  .legende .rond {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #fff3; flex: none;
+  }
+
+  /* ---------------- Pied ---------------- */
+  .pied {
+    padding: 14px 20px;
+    border-top: 1px solid var(--ligne);
+    font-size: 11.5px; color: var(--texte-2);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+  }
+  .bouton {
+    background: var(--panel-2);
+    border: 1px solid var(--ligne);
+    color: var(--texte);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .bouton:hover { border-color: var(--focus); background: var(--panel); }
+  .bouton:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* ---------------- Carte ---------------- */
+  #carte { height: 100vh; width: 100%; background: #0a0f12; }
+
+  .maj-ligne { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+  .maj-ligne b { color: var(--texte); font-weight: 600; }
+
+  /* Popups Leaflet — theme sombre */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel); color: var(--texte);
+    border: 1px solid var(--ligne); border-radius: 10px;
+  }
+  .leaflet-popup-tip { background: var(--panel); border: 1px solid var(--ligne); }
+  .leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.5; }
+  .pp-titre { font-weight: 700; margin-bottom: 6px; display:flex; align-items:center; gap:7px; }
+  .pp-titre .b { width:10px; height:10px; border-radius:50%; }
+  .pp-l { display:flex; justify-content:space-between; gap:16px; color: var(--texte-2); }
+  .pp-l b { color: var(--texte); font-weight: 600; font-family: ui-monospace, monospace; }
+  .leaflet-bar a { background: var(--panel); color: var(--texte); border-color: var(--ligne); }
+  .leaflet-bar a:hover { background: var(--panel-2); }
+
+  /* Bandeau erreur / etat de chargement */
+  .bandeau {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; background: var(--panel); border: 1px solid var(--ligne);
+    border-radius: 9px; padding: 9px 15px; font-size: 12.5px; color: var(--texte-2);
+    box-shadow: 0 6px 24px #0008;
+  }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { max-height: 46vh; }
+    #carte { height: 54vh; }
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="entete">
+    <div class="marque"><span class="pastille"></span> AgroSat&nbsp;DZ</div>
+    <div class="sous-titre">
+      Veille incendies — nord de l'Algérie.<br>
+      Détection satellitaire croisée, mise à jour continue.
+    </div>
+  </div>
+
+  <div class="contenu">
+    <div class="bloc-titre">Foyers détectés</div>
+    <div class="compteurs">
+      <div class="carte-num firms"><div class="valeur" id="n-firms">—</div><div class="etiq">FIRMS</div></div>
+      <div class="carte-num mtg"><div class="valeur" id="n-mtg">—</div><div class="etiq">MTG</div></div>
+      <div class="carte-num total"><div class="valeur" id="n-total">—</div><div class="etiq">Total affiché</div></div>
+    </div>
+
+    <div class="filtres">
+      <div class="bloc-titre">Sources</div>
+
+      <div class="source firms" id="src-firms" role="button" tabindex="0" aria-pressed="true">
+        <span class="puce firms"></span>
+        <div>
+          <div class="nom">FIRMS · polaire</div>
+          <div class="desc">VIIRS / MODIS — 375 m, très sensible</div>
+        </div>
+        <span class="case"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M6.2 11.3 3 8.1l1.1-1.1 2.1 2.1 5.6-5.6L13 4.6z"/></svg></span>
+      </div>
+
+      <div class="source mtg" id="src-mtg" role="button" tabindex="0" aria-pressed="true">
+        <span class="puce mtg"></span>
+        <div>
+          <div class="nom">MTG · géostationnaire</div>
+          <div class="desc">Toutes les 10 min — couvre le jour continu</div>
+        </div>
+        <span class="case"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M6.2 11.3 3 8.1l1.1-1.1 2.1 2.1 5.6-5.6L13 4.6z"/></svg></span>
+      </div>
+    </div>
+
+    <div class="legende">
+      <div class="bloc-titre">Intensité (taille du point)</div>
+      <div class="item"><span class="rond" style="width:8px;height:8px"></span> Foyer localisé</div>
+      <div class="item"><span class="rond" style="width:14px;height:14px"></span> Foyer étendu</div>
+      <div class="item"><span class="rond" style="width:20px;height:20px"></span> Foyer majeur (FRP élevée)</div>
+    </div>
+
+    <div class="legende">
+      <div class="bloc-titre">Dernière mise à jour</div>
+      <div class="maj-ligne"><span>FIRMS</span><b id="maj-firms">—</b></div>
+      <div class="maj-ligne"><span>MTG</span><b id="maj-mtg">—</b></div>
+    </div>
+  </div>
+
+  <div class="pied">
+    <span id="etat">Chargement…</span>
+    <button class="bouton" id="rafraichir">Rafraîchir</button>
+  </div>
+</aside>
+
+<div style="position:relative">
+  <div id="carte"></div>
+</div>
+
+<script>
+// ------------------------------------------------------------------ //
+// Sources de donnees : les JSON committes par vos deux systemes.
+// (URL "raw" GitHub — publiques, lues directement par la carte.)
+// ------------------------------------------------------------------ //
+const SOURCES = {
+  firms: "https://raw.githubusercontent.com/aklimap/fire-watch/main/feux_firms.json",
+  mtg:   "https://raw.githubusercontent.com/aklimap/mtg-fire/main/feux_mtg.json"
+};
+
+const COULEUR = { firms: "#ff3b30", mtg: "#ff9500" };
+
+// ------------------------------------------------------------------ //
+// Carte
+// ------------------------------------------------------------------ //
+const carte = L.map("carte", { zoomControl: true, attributionControl: true })
+               .setView([36.3, 3.5], 6);
+
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: "abcd", maxZoom: 19
+}).addTo(carte);
+
+const couches = {
+  firms: L.layerGroup().addTo(carte),
+  mtg:   L.layerGroup().addTo(carte)
+};
+const actif = { firms: true, mtg: true };
+let dernierData = { firms: null, mtg: null };
+
+// Rayon du cercle selon l'intensite (FRP si dispo, sinon categorie)
+function rayon(feu, source) {
+  if (source === "firms" && feu.frp_max != null) {
+    const f = feu.frp_max;
+    if (f >= 500) return 11;
+    if (f >= 100) return 8;
+    if (f >= 20)  return 6;
+    return 4;
+  }
+  if (source === "mtg" && feu.categorie != null) {
+    return feu.categorie >= 3 ? 8 : 6;
+  }
+  return 5;
+}
+
+function popup(feu, source) {
+  const c = COULEUR[source];
+  let html = `<div class="pp-titre"><span class="b" style="background:${c}"></span>`
+           + `${source === "firms" ? "FIRMS · polaire" : "MTG · géostationnaire"}</div>`;
+  html += `<div class="pp-l"><span>Position</span><b>${feu.lat.toFixed(3)}, ${feu.lon.toFixed(3)}</b></div>`;
+  if (source === "firms") {
+    if (feu.frp_max != null)  html += `<div class="pp-l"><span>Puissance</span><b>${feu.frp_max} MW</b></div>`;
+    if (feu.n_pixels != null) html += `<div class="pp-l"><span>Pixels</span><b>${feu.n_pixels}</b></div>`;
+    if (feu.statut)           html += `<div class="pp-l"><span>Statut</span><b>${feu.statut}</b></div>`;
+    if (feu.derniere_detection) html += `<div class="pp-l"><span>Détecté</span><b>${feu.derniere_detection}</b></div>`;
+    if (feu.capteurs && feu.capteurs.length)
+      html += `<div class="pp-l"><span>Capteurs</span><b>${feu.capteurs.length}</b></div>`;
+  } else {
+    if (feu.categorie != null) html += `<div class="pp-l"><span>Catégorie</span><b>${feu.categorie}</b></div>`;
+  }
+  return html;
+}
+
+function dessiner(source, data) {
+  couches[source].clearLayers();
+  if (!data || !data.feux) return;
+  data.feux.forEach(feu => {
+    if (typeof feu.lat !== "number" || typeof feu.lon !== "number") return;
+    L.circleMarker([feu.lat, feu.lon], {
+      radius: rayon(feu, source),
+      color: "#ffffff", weight: 1, opacity: .55,
+      fillColor: COULEUR[source], fillOpacity: .82
+    }).bindPopup(popup(feu, source)).addTo(couches[source]);
+  });
+}
+
+function formatHeure(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString("fr-FR", { day:"2-digit", month:"2-digit",
+    hour:"2-digit", minute:"2-digit" }) + " UTC";
+}
+
+function majCompteurs() {
+  const nf = actif.firms && dernierData.firms ? dernierData.firms.feux.length : 0;
+  const nm = actif.mtg   && dernierData.mtg   ? dernierData.mtg.feux.length   : 0;
+  document.getElementById("n-firms").textContent = dernierData.firms ? dernierData.firms.feux.length : "—";
+  document.getElementById("n-mtg").textContent   = dernierData.mtg   ? dernierData.mtg.feux.length   : "—";
+  document.getElementById("n-total").textContent = nf + nm;
+}
+
+async function charger(source) {
+  try {
+    const r = await fetch(SOURCES[source] + "?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    dernierData[source] = data;
+    dessiner(source, data);
+    document.getElementById("maj-" + source).textContent = formatHeure(data.mis_a_jour);
+    return true;
+  } catch (e) {
+    document.getElementById("maj-" + source).textContent = "indisponible";
+    console.warn("Source " + source + " :", e.message);
+    return false;
+  }
+}
+
+async function chargerTout() {
+  const etat = document.getElementById("etat");
+  etat.textContent = "Actualisation…";
+  const [okF, okM] = await Promise.all([charger("firms"), charger("mtg")]);
+  majCompteurs();
+  const t = new Date().toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" });
+  if (okF || okM) etat.textContent = "À jour · " + t;
+  else etat.textContent = "Sources injoignables";
+}
+
+// Filtres : (dé)cocher une source
+function basculer(source) {
+  actif[source] = !actif[source];
+  const el = document.getElementById("src-" + source);
+  el.classList.toggle("eteinte", !actif[source]);
+  el.setAttribute("aria-pressed", String(actif[source]));
+  if (actif[source]) carte.addLayer(couches[source]);
+  else carte.removeLayer(couches[source]);
+  majCompteurs();
+}
+["firms", "mtg"].forEach(s => {
+  const el = document.getElementById("src-" + s);
+  el.addEventListener("click", () => basculer(s));
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); basculer(s); }
+  });
+});
+
+document.getElementById("rafraichir").addEventListener("click", chargerTout);
+
+// Chargement initial + rafraichissement auto toutes les 3 min
+chargerTout();
+setInterval(chargerTout, 180000);
+</script>
+</body>
+</html>
