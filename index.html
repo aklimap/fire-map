@@ -200,6 +200,16 @@
   .leaflet-bar a { background: var(--panel); color: var(--texte); border-color: var(--ligne); }
   .leaflet-bar a:hover { background: var(--panel-2); }
 
+  /* Selecteur de fonds — theme sombre */
+  .leaflet-control-layers {
+    background: var(--panel); color: var(--texte);
+    border: 1px solid var(--ligne); border-radius: 9px;
+    box-shadow: 0 6px 24px #0007; padding: 4px 2px;
+  }
+  .leaflet-control-layers-list { padding: 4px 8px; }
+  .leaflet-control-layers label { margin: 4px 0; font-size: 12.5px; cursor: pointer; }
+  .leaflet-control-layers-selector { margin-right: 7px; }
+
   /* Bandeau erreur / etat de chargement */
   .bandeau {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
@@ -298,10 +308,44 @@ const COULEUR = { firms: "#ff3b30", mtg: "#ff9500" };
 const carte = L.map("carte", { zoomControl: true, attributionControl: true })
                .setView([36.3, 3.5], 6);
 
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  attribution: '&copy; OpenStreetMap &copy; CARTO',
-  subdomains: "abcd", maxZoom: 19
-}).addTo(carte);
+// ---- Fond 1 : schema sombre (defaut) ----
+const fondSombre = L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: "abcd", maxZoom: 19 }
+);
+
+// ---- Fond 2 : satellite paysage (Esri World Imagery) — vrai terrain ----
+const fondSatellite = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Imagerie &copy; Esri, Maxar, Earthstar Geographics", maxZoom: 19 }
+);
+
+// ---- Fond 3 : image MTG reelle (EUMETView WMS, Geo Colour RGB) ----
+// Note : le WMS EUMETView attend une date/heure recente (parametre TIME).
+// On calcule un creneau recent (arrondi au quart d'heure precedent, en UTC).
+function heureMTG() {
+  const d = new Date(Date.now() - 30 * 60000);        // ~30 min de marge (dispo donnee)
+  d.setUTCMinutes(Math.floor(d.getUTCMinutes() / 15) * 15, 0, 0);
+  return d.toISOString().split(".")[0] + "Z";
+}
+const fondMTG = L.tileLayer.wms("https://view.eumetsat.int/geoserver/wms", {
+  layers: "mtg_fd:rgb_geocolour",     // Geo Colour RGB - MTG
+  format: "image/png",
+  transparent: false,
+  version: "1.3.0",
+  time: heureMTG(),
+  attribution: "Image &copy; EUMETSAT (Geo Colour RGB - MTG)"
+});
+
+fondSombre.addTo(carte);   // fond par defaut
+
+// Sélecteur de fonds (coin haut-droit)
+const fonds = {
+  "Schéma sombre": fondSombre,
+  "Satellite (terrain réel)": fondSatellite,
+  "Image MTG temps réel": fondMTG
+};
+L.control.layers(fonds, null, { position: "topright", collapsed: false }).addTo(carte);
 
 const couches = {
   firms: L.layerGroup().addTo(carte),
@@ -414,6 +458,11 @@ function basculer(source) {
   el.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); basculer(s); }
   });
+});
+
+// Garder les feux au-dessus quand on change de fond de carte
+carte.on("baselayerchange", () => {
+  Object.values(couches).forEach(c => c.eachLayer(m => m.bringToFront && m.bringToFront()));
 });
 
 document.getElementById("rafraichir").addEventListener("click", chargerTout);
