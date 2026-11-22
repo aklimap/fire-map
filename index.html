@@ -409,6 +409,13 @@ const calqueFRP = coucheEUM("mtg_fd:frp", "Fire Radiative Power", { transparent:
 // Foudre : cause d'allumage naturelle, observee en continu par le Lightning Imager.
 const calqueFoudre = coucheEUM("mtg_fd:li_afa", "Lightning Imager", { transparent: true, opacity: .75 });
 
+// Reperes geographiques : frontieres, cotes et villes, en transparence.
+// Indispensable au-dessus des fonds d'imagerie : la nuit, le Fire Temperature
+// RGB est presque entierement noir, et sans ce calque on perd tout repere.
+const calqueReperes = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Repères &copy; Esri", maxZoom: 16, opacity: .85, pane: "shadowPane" });
+
 // Le creneau est fige au chargement : sans rafraichissement, la carte
 // afficherait une image perimee au bout de quelques heures.
 function majCreneauMTG() {
@@ -424,9 +431,12 @@ L.control.layers({
   "MTG · Couleur naturelle": fondNaturel,
   "MTG · Température de feu": fondFeu
 }, {
+  "Repères géographiques": calqueReperes,
   "Puissance radiative (FRP)": calqueFRP,
   "Foudre (impacts)": calqueFoudre
 }, { position: "topright", collapsed: false }).addTo(carte);
+
+calqueReperes.addTo(carte);
 
 const couches = { firms: L.layerGroup().addTo(carte), mtg: L.layerGroup().addTo(carte) };
 const actif = { firms: true, mtg: true, perm: true };
