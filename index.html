@@ -384,17 +384,49 @@ function heureMTG() {
   d.setUTCMinutes(Math.floor(d.getUTCMinutes() / 15) * 15, 0, 0);
   return d.toISOString().split(".")[0] + "Z";
 }
-const fondMTG = L.tileLayer.wms("https://view.eumetsat.int/geoserver/wms", {
-  layers: "mtg_fd:rgb_geocolour", format: "image/png", transparent: false,
-  version: "1.3.0", time: heureMTG(),
-  attribution: "Image &copy; EUMETSAT (Geo Colour RGB — MTG)" });
+// Imagerie MTG servie par EUMETView : les memes donnees que celles analysees
+// par mtg_watch.py, mais vues en image. On ne regarde plus un point sur une
+// carte, on regarde le feu lui-meme.
+const eumetview = [];
+function coucheEUM(layer, legende, options) {
+  const c = L.tileLayer.wms("https://view.eumetsat.int/geoserver/wms",
+    Object.assign({
+      layers: layer, format: "image/png", version: "1.3.0",
+      time: heureMTG(), attribution: legende + " &copy; EUMETSAT"
+    }, options));
+  eumetview.push(c);
+  return c;
+}
+
+const fondMTG = coucheEUM("mtg_fd:rgb_geocolour", "Geo Colour RGB", { transparent: false });
+// True Colour : la fumee et la cicatrice de brulage y sont bien visibles.
+const fondNaturel = coucheEUM("mtg_fd:rgb_truecolour", "True Colour RGB", { transparent: false });
+// Fire Temperature : les feux froids ressortent en rouge, les plus intenses en
+// jaune-blanc. Genere a 500 m, soit quatre fois mieux que le canal thermique brut.
+const fondFeu = coucheEUM("mtg_fd:rgb_firetemperature", "Fire Temperature RGB", { transparent: false });
+// FRP : la puissance radiative des foyers, produit directement par EUMETSAT.
+const calqueFRP = coucheEUM("mtg_fd:frp", "Fire Radiative Power", { transparent: true, opacity: .9 });
+// Foudre : cause d'allumage naturelle, observee en continu par le Lightning Imager.
+const calqueFoudre = coucheEUM("mtg_fd:li_afa", "Lightning Imager", { transparent: true, opacity: .75 });
+
+// Le creneau est fige au chargement : sans rafraichissement, la carte
+// afficherait une image perimee au bout de quelques heures.
+function majCreneauMTG() {
+  const t = heureMTG();
+  eumetview.forEach(c => { if (carte.hasLayer(c)) c.setParams({ time: t }); });
+}
 
 fondSombre.addTo(carte);
 L.control.layers({
   "Schéma sombre": fondSombre,
   "Satellite (terrain réel)": fondSatellite,
-  "Image MTG temps réel": fondMTG
-}, null, { position: "topright", collapsed: false }).addTo(carte);
+  "MTG · Geo Colour": fondMTG,
+  "MTG · Couleur naturelle": fondNaturel,
+  "MTG · Température de feu": fondFeu
+}, {
+  "Puissance radiative (FRP)": calqueFRP,
+  "Foudre (impacts)": calqueFoudre
+}, { position: "topright", collapsed: false }).addTo(carte);
 
 const couches = { firms: L.layerGroup().addTo(carte), mtg: L.layerGroup().addTo(carte) };
 const actif = { firms: true, mtg: true, perm: true };
@@ -586,6 +618,7 @@ async function chargerTout() {
   const etat = document.getElementById("etat");
   etat.textContent = "Actualisation…";
   const [okF, okM] = await Promise.all([charger("firms"), charger("mtg")]);
+  majCreneauMTG();
   majCompteurs();
   const t = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   etat.textContent = (okF || okM) ? "Dernière lecture " + t : "Sources injoignables";
