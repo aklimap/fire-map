@@ -309,10 +309,17 @@ const carte = L.map("carte", { zoomControl: true, attributionControl: true })
                .setView([36.3, 3.5], 6);
 
 // ---- Fond 1 : schema sombre (defaut) ----
-const fondSombre = L.tileLayer(
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: "abcd", maxZoom: 19 }
-);
+// CARTO exige desormais une cle API gratuite (sinon filigrane "API KEY REQUIRED").
+// Cle gratuite : https://carto.com/basemaps/apikey/  -> coller ci-dessous.
+// Si la cle est vide, on utilise le fond sombre Esri (sans cle).
+const CARTO_KEY = "";
+const fondSombre = CARTO_KEY
+  ? L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=" + CARTO_KEY,
+      { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: "abcd", maxZoom: 19 })
+  : L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      { attribution: "Fond &copy; Esri, HERE, Garmin, &copy; OpenStreetMap", maxZoom: 16 });
 
 // ---- Fond 2 : satellite paysage (Esri World Imagery) — vrai terrain ----
 const fondSatellite = L.tileLayer(
