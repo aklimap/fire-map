@@ -354,8 +354,12 @@ const SEUIL_PANNE_MIN  = { firms: 180, mtg: 120 };
 // ------------------------------------------------------------------ //
 // Carte
 // ------------------------------------------------------------------ //
-const carte = L.map("carte", { zoomControl: true, attributionControl: true })
-               .setView([33.5, 3.0], 5);
+const carte = L.map("carte", { zoomControl: true, attributionControl: true });
+
+// Cadrage sur la zone reellement surveillee par les deux chaines
+// (meme emprise que l'AOI des scripts), plutot qu'un centre arbitraire.
+const EMPRISE = L.latLngBounds([[18.9, -8.7], [37.1, 12.0]]);
+carte.fitBounds(EMPRISE, { padding: [18, 18] });
 
 // ---- Fond 1 : schema sombre (defaut) ----
 // CARTO exige une cle API gratuite (sinon filigrane "API KEY REQUIRED").
